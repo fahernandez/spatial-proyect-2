@@ -1,0 +1,302 @@
+---
+title: "Estadística Espacial"
+subtitle: "Proyecto 2"
+output: html_document
+---
+
+
+```{r}
+
+library(sp)
+library(raster)
+library(rgeos)
+library(rgdal)
+library(tidyverse)
+library(ggplot2)
+library(ggspatial)
+library(tmap)
+
+library("rnaturalearth")
+library("rnaturalearthdata")
+
+world <- ne_countries(scale = "medium", returnclass = "sf")
+cantones <- sf::st_read("data/Cantones_de_Costa_Rica.shp")
+cantones<-cantones %>% sf::st_transform(crs = sf::st_crs(4326))
+```
+
+Importat el .shp file de distritos
+
+```{r}
+Distritos <- shapefile("data/Distritos_de_Costa_Rica.shp")
+
+Distritos.sf <- sf::st_read("data/Distritos_de_Costa_Rica.shp")
+Distritos.sf<-Distritos.sf %>% sf::st_transform(crs = sf::st_crs(4326))
+
+Distritos.sf$CODIGO<-as.character(Distritos.sf$CODIGO)
+str(Distritos.sf)
+```
+
+Visualizar los datos que tiene
+
+```{r}
+head(data.frame(Distritos))
+```
+
+```{r}
+ggplot(Distritos.sf)+
+  geom_sf(aes(geometry=geometry,
+          fill=NOM_PROV))+
+  theme_bw()+
+  scale_fill_viridis_d(guide_legend(title="Provincias"))+
+  ggtitle("Costa Rica. Distritos por provincia")->g
+
+g
+```
+
+
+Se debe eliminar la Isla del Coco
+
+```{r}
+i <- which(Distritos$NOM_DIST == 'ISLA DEL COCO')
+
+IslaCoco <- Distritos[i,]
+
+Distritos2 <- erase(Distritos, IslaCoco)
+
+Distritos2.sf<-sf::st_as_sf(Distritos2)
+
+Distritos2.sf<-Distritos2.sf %>% sf::st_transform(crs = sf::st_crs(4326))
+
+ggplot(Distritos2.sf)+
+  geom_sf(aes(geometry=geometry,
+          fill=NOM_PROV))+
+  theme_bw()+
+  scale_fill_viridis_d(guide_legend(title="Provincias"))+
+  ggtitle("Costa Rica. Distritos por provincia")
+
+
+```
+
+```{r}
+
+Distritos2.sf$COD_PROV<-as.integer(Distritos2.sf$COD_PROV)
+Distritos2.sf$COD_CANT<-as.integer(Distritos2.sf$COD_CANT)
+Distritos2.sf$COD_DIST<-as.integer(Distritos2.sf$COD_DIST)
+
+head(data.frame(Distritos2.sf))
+```
+
+Datos de daños
+
+```{r}
+clinicas<-read.csv("data/clinica.csv", sep=",", dec=",", encoding="UTF-7", fileEncoding = "UTF-7")
+head(clinicas)
+```
+
+Analizar las clínicas dentro de la GAM
+
+```{r}
+GAM.sf <- sf::st_read("data/wms.kml")
+
+GAM.sf<-sf::st_collection_extract(GAM.sf, "POLYGON")
+
+GAM<-as(GAM.sf, 'Spatial')
+GAM2 <- spTransform(GAM, CRS("+proj=tmerc +lat_0=0 +lon_0=-84 +k=0.9999 +x_0=500000 +y_0=0 +ellps=WGS84 +units=m +no_defs"))
+
+Distritos.GAM <- crop(Distritos2, GAM2)
+
+```
+
+
+```{r}
+
+Distritos.GAM.sf<-sf::st_as_sf(Distritos.GAM)
+
+Distritos.GAM.sf<-Distritos.GAM.sf %>% sf::st_transform(crs = sf::st_crs(4326))
+
+Distritos.GAM.sf$COD_PROV<-as.integer(Distritos.GAM.sf$COD_PROV)
+Distritos.GAM.sf$COD_CANT<-as.integer(Distritos.GAM.sf$COD_CANT)
+Distritos.GAM.sf$COD_DIST<-as.integer(Distritos.GAM.sf$COD_DIST)
+clinicas$COD_PROV<-as.integer(clinicas$COD_PROV)
+clinicas$COD_CANT<-as.integer(clinicas$COD_CANT)
+clinicas$COD_DIST<-as.integer(clinicas$COD_DIST)
+
+ggplot(Distritos.GAM.sf)+
+  geom_sf(aes(geometry=geometry,
+          fill=NOM_PROV))+
+  theme_bw()+
+  scale_fill_viridis_d(guide_legend(title="Provincias"))+
+  ggtitle("Costa Rica. Distritos por provincia")
+
+
+coordenadas <- Distritos.GAM.sf %>%
+  sf::st_centroid() %>%
+  sf::st_coordinates()
+# insert centroid long and lat fields as attributes of polygons
+
+Distritos.GAM.sf$long <- coordenadas[,1]
+Distritos.GAM.sf$lat <- coordenadas[,2]
+
+
+fronteras<-ggplot() +
+    geom_sf(data = world %>% filter(name!="Costa Rica"),
+            colour="gray") 
+
+mapa0<-fronteras+
+  geom_sf(data=Distritos3.sf,aes(geometry=geometry, fill = MICRO+PEQUENA), alpha=0.55)+
+  theme_bw()+
+  scale_fill_viridis_c(guide_legend(title="Núm. MYPE \n empresas"))+
+  #scale_fill_distiller(palette = "PiYG")+
+  ggtitle("Figura 1. Distribución de micro y pequeñas empresas (MYPE) \n  según distritos, Costa Rica. ")+
+  xlab("Longitud") + ylab("Latitud")+
+  theme(legend.title = element_text(size=8),
+        legend.text = element_text(size=8),
+        plot.title = element_text(hjust = 0.5, size=10),
+        axis.title = element_text(size = 9),
+        axis.text =  element_text(size = 8),
+        panel.grid.major = element_line(color = gray(0.5), linetype = "dashed", 
+        size = 0.5), panel.background = element_rect(fill = "aliceblue"))+
+  annotation_north_arrow(location = "bl", which_north = "true", 
+        pad_x = unit(0.75, "in"), pad_y = unit(0.5, "in"),
+        style = north_arrow_fancy_orienteering) +
+  annotation_scale(location = "bl", width_hint = 0.4)+
+    coord_sf(xlim = c(-85.97907, -82.55232), ylim = c(8.039627, 11.21976), expand = FALSE)
+
+#ggplot(Distritos2.GAM.sf)+
+ # geom_sf(aes(geometry=geometry, fill = NOM_PROV), alpha=0.4)+
+  #geom_point(aes(long, lat, size = MICRO, colour = MICRO)) +
+  #theme_bw()+
+  #scale_colour_distiller(palette = "PiYG")+
+  #scale_fill_brewer(palette = "Set3"
+  #                  , drop = FALSE)+
+  #ggtitle("Costa Rica. Distritos por provincia")+
+  #ggtitle("Figura 1. Distribución de pequeñas empresas \n  según distritos, Costa Rica. ")+
+  #theme(legend.title = element_text(size=8),
+  #      legend.text = element_text(size=8),
+   #     plot.title = element_text(hjust = 0.5, size=10))+
+  #annotation_north_arrow(location = "bl", which_north = "true", 
+   #     pad_x = unit(0.75, "in"), pad_y = unit(0.5, "in"),
+  #      style = north_arrow_fancy_orienteering) +
+  #annotation_scale(location = "bl", width_hint = 0.4)+
+  #xlab("Longitud") + ylab("Latitud")
+
+cantones_bordes<-ggplot() +
+    geom_sf(data = cantones,
+            colour="gray") 
+
+
+mapa1.micro<-cantones_bordes +
+  geom_sf(data=Distritos2.GAM.sf,aes(geometry=geometry, fill = MICRO), alpha=0.55)+
+  theme_bw()+
+  #scale_fill_distiller(palette = "PiYG")+
+  scale_fill_viridis_c(guide_legend(title="Núm. micro \n empresas"))+
+  ggtitle("Figura 2. Distribución de micro empresas según distritos,\n Gran Área Metropolitana, Costa Rica. ")+
+  theme(legend.title = element_text(size=8),
+        legend.text = element_text(size=8),
+        plot.title = element_text(hjust = 0.5, size=10),
+        axis.title = element_text(size = 9),
+        axis.text =  element_text(size = 8))+
+  annotation_north_arrow(location = "bl", which_north = "true", 
+        pad_x = unit(0.5, "in"), pad_y = unit(0.3, "in"),
+        style = north_arrow_fancy_orienteering) +
+  annotation_scale(location = "bl", width_hint = 0.4)+
+  xlab("Longitud") + ylab("Latitud")+
+    coord_sf(xlim = c(-84.49, -83.74), ylim = c(9.73, 10.17), expand = FALSE)
+
+mapa1.peq<-cantones_bordes +
+  geom_sf(data=Distritos2.GAM.sf,aes(geometry=geometry, fill = PEQUENA), alpha=0.55)+
+  theme_bw()+
+  #scale_fill_distiller(palette = "PiYG")+
+  scale_fill_viridis_c(guide_legend(title="Núm. pequeñas \n empresas"))+
+  ggtitle("Figura 3. Distribución de pequeñas empresas según distritos,\n Gran Área Metropolitana, Costa Rica. ")+
+  theme(legend.title = element_text(size=8),
+        legend.text = element_text(size=8),
+        plot.title = element_text(hjust = 0.5, size=10),
+        axis.title = element_text(size = 9),
+        axis.text =  element_text(size = 8))+
+  annotation_north_arrow(location = "bl", which_north = "true", 
+        pad_x = unit(0.5, "in"), pad_y = unit(0.3, "in"),
+        style = north_arrow_fancy_orienteering) +
+  annotation_scale(location = "bl", width_hint = 0.4)+
+  xlab("Longitud") + ylab("Latitud")+
+    coord_sf(xlim = c(-84.49, -83.74), ylim = c(9.73, 10.17), expand = FALSE)
+  
+
+top5.mic<-head(Distritos2.GAM.sf %>% arrange(desc(MICRO)),5)
+top5.peq<-head(Distritos2.GAM.sf %>% arrange(desc(PEQUENA)),5)
+
+mapa2.micro<-cantones_bordes +
+geom_sf(data=Distritos2.GAM.sf,aes(geometry=geometry, fill = NOM_PROV), alpha=0.4)+
+  geom_point(data=top5.mic,aes(long, lat, size = MICRO, colour = MICRO)) +
+  theme_bw()+
+  scale_colour_viridis_c(guide_legend(title="Núm. micro \n empresas"))+
+  scale_fill_brewer(palette = "Paired"
+                    , drop = FALSE,
+                    guide_legend(title="Provincia"))+
+  ggtitle("Figura 4. Los cinco distrios con mayor cantidad de micro empresas, \n Gran Área Metropolitana, Costa Rica. ")+
+  geom_sf_label(data=top5.mic,aes(label = NOM_DIST), size=2, nudge_y = 0.01, alpha = 0.5)+
+  theme(legend.title = element_text(size=8),
+        legend.text = element_text(size=8),
+        plot.title = element_text(hjust = 0.5, size=10),
+        axis.title = element_text(size = 9),
+        axis.text =  element_text(size = 8))+
+  annotation_north_arrow(location = "bl", which_north = "true", 
+        pad_x = unit(0.75, "in"), pad_y = unit(0.5, "in"),
+        style = north_arrow_fancy_orienteering) +
+  annotation_scale(location = "bl", width_hint = 0.4)+
+  xlab("Longitud") + ylab("Latitud")+
+  guides(size = FALSE)+
+  coord_sf(xlim = c(-84.49, -83.74), ylim = c(9.73, 10.17), expand = FALSE)
+
+
+mapa2.peq<-cantones_bordes +
+geom_sf(data=Distritos2.GAM.sf,aes(geometry=geometry, fill = NOM_PROV), alpha=0.4)+
+  geom_point(data=top5.peq,aes(long, lat, size = PEQUENA, colour = PEQUENA)) +
+  theme_bw()+
+  scale_colour_viridis_c(guide_legend(title="Núm. pequeñas \n empresas"))+
+  scale_fill_brewer(palette = "Paired"
+                    , drop = FALSE,
+                    guide_legend(title="Provincia"))+
+  ggtitle("Figura 5. Los cinco distrios con mayor cantidad de pequeñas empresas, \n Gran Área Metropolitana, Costa Rica. ")+
+  geom_sf_label(data=top5.peq,aes(label = NOM_DIST), size=2, nudge_y = 0.01, alpha = 0.5)+
+  theme(legend.title = element_text(size=8),
+        legend.text = element_text(size=8),
+        plot.title = element_text(hjust = 0.5, size=10),
+        axis.title = element_text(size = 9),
+        axis.text =  element_text(size = 8))+
+  annotation_north_arrow(location = "bl", which_north = "true", 
+        pad_x = unit(0.75, "in"), pad_y = unit(0.5, "in"),
+        style = north_arrow_fancy_orienteering) +
+  annotation_scale(location = "bl", width_hint = 0.4)+
+  xlab("Longitud") + ylab("Latitud")+
+  guides(size = FALSE)+
+  coord_sf(xlim = c(-84.49, -83.74), ylim = c(9.73, 10.17), expand = FALSE)
+
+
+#plotly::ggplotly(ggplot(Distritos2.GAM.sf)+
+ # geom_sf(aes(geometry=geometry, fill = NOM_PROV))+
+  #geom_point(aes(long, lat, text = NOM_DIST, size = EMPRESAS, colour = EMPRESAS)) +
+  #theme_bw()+
+  #scale_fill_viridis_d(guide_legend(title="Provincias"))+
+  #ggtitle("Costa Rica. Distritos por provincia")
+#,tootip=c("size","text"))
+
+
+mapa0
+mapa1.micro
+mapa1.peq
+mapa2.micro
+mapa2.peq
+
+
+```
+
+
+
+
+
+
+
+
+
+
