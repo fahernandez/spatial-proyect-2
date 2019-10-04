@@ -1,14 +1,14 @@
-"ID";"Nombre";"Latitude";"Longitude"
-1;"Hospital de las Mujeres Adolfo Carit Eva";9.923906;-84.0835107
-2;"Centro Nacional de Rehabilitación Humberto Araya Rojas";9.9491052;-84.1188222
-3;"Hospital Maximiliano Peralta Jiménez";9.8622329;-83.9240112
-4;"Hospital México";9.9515091;-84.1172825
-5;"Hospital Nacional de Geriatría y Gerontología Raúl Blanco Cervantes";9.9319995;-84.0893361
-6;"Hospital Nacional de Niños Carlos Sáenz Herrera";9.9340984;-84.0897828
-7;"Hospital Nacional Psiquiátrico Manuel Antonio Chapuí y Torres";9.9546062;-84.1406339
-8;"Hospital Psiquiátrico Roberto Chacón Paut";9.9354319;-83.9789351
-9;"Hospital Rafael Ángel Calderón Guardia";9.9364727;-84.0717298
-10;"Hospital San Rafael de Alajuela";10.0069777;-84.2177921
-11;"Hospital San Juan de Dios";9.9339098;-84.0878738
-12;"Hospital San Vicente de Paúl";9.9916333;-84.1242922
-13;"Hospital William Allen Taylor";9.903521;-83.6883923
+IDH,Nombre,Latitude,Longitude
+1,Hospital de las Mujeres Adolfo Carit Eva,9.923906,-84.0835107
+2,Centro Nacional de Rehabilitación Humberto Araya Rojas,9.9491052,-84.1188222
+3,Hospital Maximiliano Peralta Jiménez,9.8622329,-83.9240112
+4,Hospital México,9.9515091,-84.1172825
+5,Hospital Nacional de Geriatría y Gerontología Raúl Blanco Cervantes,9.9319995,-84.0893361
+6,Hospital Nacional de Niños Carlos Sáenz Herrera,9.9340984,-84.0897828
+7,Hospital Nacional Psiquiátrico Manuel Antonio Chapuí y Torres,9.9546062,-84.1406339
+8,Hospital Psiquiátrico Roberto Chacón Paut,9.9354319,-83.9789351
+9,Hospital Rafael Ángel Calderón Guardia,9.9364727,-84.0717298
+10,Hospital San Rafael de Alajuela,10.0069777,-84.2177921
+11,Hospital San Juan de Dios,9.9339098,-84.0878738
+12,Hospital San Vicente de Paúl,9.9916333,-84.1242922
+13,Hospital William Allen Taylor,9.903521,-83.6883923
