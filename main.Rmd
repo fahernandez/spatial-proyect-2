@@ -1,302 +1,308 @@
 ---
-title: "Estadística Espacial"
+title: "Universidad de Costa Rica <br> Estadística Espacial"
 subtitle: "Proyecto 2"
-output: html_document
+author: "Fabián Hernández <br> Fiorella Laurito"
+output: 
+    html_document:
+      fig_caption: true
+      css: custom.css
+      code_folding: hide
+      theme: cerulean
+      highlight: tango
 ---
 
+<script>
+   $(document).ready(function() {
+     $head = $('#header');
+     $head.prepend('<img src=\"logo.png\" style=\"float: right;width: 250px;\"/>')
+   });
+</script>
 
-```{r}
+# {.tabset .tabset-fade .tabset-pills}
 
-library(sp)
-library(raster)
-library(rgeos)
-library(rgdal)
+## Introducción
+
+![](Introduccion.png)
+
+## Resultados
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(comment=" ",cache=T)
+
+library(sf)
+library(spData)
 library(tidyverse)
-library(ggplot2)
-library(ggspatial)
+library(spDataLarge)
 library(tmap)
 
-library("rnaturalearth")
-library("rnaturalearthdata")
-
-world <- ne_countries(scale = "medium", returnclass = "sf")
-cantones <- sf::st_read("data/Cantones_de_Costa_Rica.shp")
-cantones<-cantones %>% sf::st_transform(crs = sf::st_crs(4326))
+library(rgdal)
+library(maptools)
+library(raster)
+library(ggplot2)
+library(ggspatial)
+library(spatstat)
 ```
 
-Importat el .shp file de distritos
+Importación de capas
 
 ```{r}
-Distritos <- shapefile("data/Distritos_de_Costa_Rica.shp")
+#Cantones
+Cantones.sf <- sf::st_read("Cantones_de_Costa_Rica.shp") 
+Cantones.sf<-Cantones.sf %>% sf::st_transform(crs = sf::st_crs(4326))
 
-Distritos.sf <- sf::st_read("data/Distritos_de_Costa_Rica.shp")
-Distritos.sf<-Distritos.sf %>% sf::st_transform(crs = sf::st_crs(4326))
+path <- "Cantones_de_Costa_Rica.shp"
+Cantones <- shapefile(path)
 
-Distritos.sf$CODIGO<-as.character(Distritos.sf$CODIGO)
-str(Distritos.sf)
-```
-
-Visualizar los datos que tiene
-
-```{r}
-head(data.frame(Distritos))
-```
-
-```{r}
-ggplot(Distritos.sf)+
-  geom_sf(aes(geometry=geometry,
-          fill=NOM_PROV))+
-  theme_bw()+
-  scale_fill_viridis_d(guide_legend(title="Provincias"))+
-  ggtitle("Costa Rica. Distritos por provincia")->g
-
-g
-```
-
-
-Se debe eliminar la Isla del Coco
-
-```{r}
-i <- which(Distritos$NOM_DIST == 'ISLA DEL COCO')
-
-IslaCoco <- Distritos[i,]
-
-Distritos2 <- erase(Distritos, IslaCoco)
-
-Distritos2.sf<-sf::st_as_sf(Distritos2)
-
-Distritos2.sf<-Distritos2.sf %>% sf::st_transform(crs = sf::st_crs(4326))
-
-ggplot(Distritos2.sf)+
-  geom_sf(aes(geometry=geometry,
-          fill=NOM_PROV))+
-  theme_bw()+
-  scale_fill_viridis_d(guide_legend(title="Provincias"))+
-  ggtitle("Costa Rica. Distritos por provincia")
-
-
-```
-
-```{r}
-
-Distritos2.sf$COD_PROV<-as.integer(Distritos2.sf$COD_PROV)
-Distritos2.sf$COD_CANT<-as.integer(Distritos2.sf$COD_CANT)
-Distritos2.sf$COD_DIST<-as.integer(Distritos2.sf$COD_DIST)
-
-head(data.frame(Distritos2.sf))
-```
-
-Datos de daños
-
-```{r}
-clinicas<-read.csv("data/clinica.csv", sep=",", dec=",", encoding="UTF-7", fileEncoding = "UTF-7")
-head(clinicas)
-```
-
-Analizar las clínicas dentro de la GAM
-
-```{r}
-GAM.sf <- sf::st_read("data/wms.kml")
+#GAM
+GAM.sf <- sf::st_read("wms.kml")
 
 GAM.sf<-sf::st_collection_extract(GAM.sf, "POLYGON")
 
 GAM<-as(GAM.sf, 'Spatial')
 GAM2 <- spTransform(GAM, CRS("+proj=tmerc +lat_0=0 +lon_0=-84 +k=0.9999 +x_0=500000 +y_0=0 +ellps=WGS84 +units=m +no_defs"))
 
-Distritos.GAM <- crop(Distritos2, GAM2)
+Cantones.GAM <- crop(Cantones, GAM2)
+
+Cantones.GAM.sf<-sf::st_as_sf(Cantones.GAM)
+
+Cantones.GAM.sf<-Cantones.GAM.sf %>% sf::st_transform(crs = sf::st_crs(4326))
+Cantones.GAM<-as(Cantones.GAM.sf, 'Spatial') #cambiar crs en sp
+
+#Hospitales
+hospitales_gam<-read.csv("hospitales-gam.csv",sep=",",fileEncoding = "UTF-8")
+clinicas<-read.csv("clinica.csv",sep=";",fileEncoding = "UTF-8")
+
+distancias<-read.csv("distance.csv",sep=",",fileEncoding = "UTF-8")
+
+hospital_cercano<-distancias %>% 
+  group_by(IDC,IDH) %>% 
+  summarise(distancia =sum(Distancia) ) %>%
+  filter(distancia==min(distancia))
+
+#Clinicas y distancia a hospital más cercano
+
+clinicas_distancia<-clinicas %>% 
+  left_join(hospital_cercano,by = c("IDT"="IDC"))
+
+coordinates(clinicas_distancia)=~Longitude+Latitude 
+zero <- zerodist(clinicas_distancia)
+
+projection(clinicas_distancia)=projection(Cantones.GAM)  
+
+#clinicas_distancia.sf<-sf::st_as_sf(clinicas_distancia)
+#clinicas_distancia.sf<-clinicas_distancia.sf %>% sf::st_transform(crs = sf::st_crs(4326))
+#clinicas_GAM <- st_intersects(clinicas_distancia.sf,Cantones.GAM.sf)  
+
+clinicas_GAM <- over(clinicas_distancia,Cantones.GAM)
+
+
+
+clinicas_distancia$over <- clinicas_GAM$OBJECTID 
+
+data.clinicas.distancia <- clinicas_distancia[!is.na(clinicas_distancia$over),]  
+data.clinicas.distancia.sf<-sf::st_as_sf(data.clinicas.distancia)
+
+
+data.clinicas.distancia
+
+
+#Hospitales
+
+coordinates(hospitales_gam)=~Longitude+Latitude
+projection(hospitales_gam)=projection(Cantones.GAM)  
+hospitales_gam.sf<-sf::st_as_sf(hospitales_gam)
+```
+
+### Mapeo de centros médicos
+
+```{r,fig.align='center'}
+
+ggplot() +
+  geom_sf(data = Cantones.sf,
+            colour="gray") +
+    geom_sf(data = Cantones.GAM.sf,aes(fill=NOM_PROV), alpha=0.4) +
+  geom_sf(data = data.clinicas.distancia.sf)+
+  geom_sf(data = hospitales_gam.sf,shape = 23,fill="#C33522",size=2)+
+  ggtitle("Distribución de clínicas inscritas según provincia,\n Gran Área Metropolitana, Costa Rica. ")+
+  scale_fill_brewer(palette = "Paired"
+                    , drop = FALSE,
+                    guide_legend(title="Provincia"))+
+   theme_bw()+
+  theme(legend.title = element_text(size=8),
+        legend.text = element_text(size=8),
+        plot.title = element_text(hjust = 0.5, size=10),
+        axis.title = element_text(size = 9),
+        axis.text =  element_text(size = 8))+
+  annotation_north_arrow(location = "bl", which_north = "true", 
+        pad_x = unit(0.5, "in"), pad_y = unit(0.3, "in"),
+        style = north_arrow_fancy_orienteering) +
+  annotation_scale(location = "bl", width_hint = 0.4)+
+  xlab("Longitud") + ylab("Latitud")+
+    coord_sf(xlim = c(-84.49, -83.74), ylim = c(9.73, 10.17), expand = FALSE)
+```
+
+
+```{r, include=FALSE}
+mean_centerX <- mean(data.clinicas.distancia@coords[,1])
+mean_centerY <- mean(data.clinicas.distancia@coords[,2])
+ 
+standard_deviationX <- sd(data.clinicas.distancia@coords[,1])
+standard_deviationY <- sd(data.clinicas.distancia@coords[,2])
+ 
+standard_distance <- sqrt(sum(((data.clinicas.distancia@coords[,1]-mean_centerX)^2+(data.clinicas.distancia@coords[,2]-mean_centerY)^2))/(nrow(data.clinicas.distancia)))
+
+plot(Cantones.GAM)
+plot(data.clinicas.distancia,pch="+",cex=0.5,main="",add=T)
+points(mean_centerX,mean_centerY,col="cadetblue",pch=16)
+plotrix::draw.circle(mean_centerX,mean_centerY,radius=standard_distance,border="cadetblue",lwd=2)
+
+
+plot(Cantones.GAM)
+plot(data.clinicas.distancia,pch="+",cex=0.5,main="",add=T)
+points(mean_centerX,mean_centerY,col="cadetblue",pch=16)
+plotrix::draw.ellipse(mean_centerX,mean_centerY,a=standard_deviationX,b=standard_deviationY,border="cadetblue",lwd=2)
+```
+
+
+
+### Estimación de la intensidad
+
+```{r, include=FALSE}
+
+ventana<- as(Cantones.GAM, "owin") 
+
+clinicas.ppp    <- as(data.clinicas.distancia, "ppp")
+
+xy.ppp <-  spatstat::ppp(x = clinicas.ppp$x,clinicas.ppp$y,window = ventana)
+#plot(xy.ppp, main="Tors de granito en Bodmin Moor")
+#plot(density(xy.ppp), main="Tors de granito en Bodmin Moor")
+
+
+plot(xy.ppp, pch=20, cols="grey70", main=NULL,cex=0.55,border="grey") 
+plot(quadratcount(xy.ppp, nx = 4, ny = 4),add=T,cex=0.65,border="cadetblue",col="blue")
 
 ```
+
+#### Kernel y ancho de banda
 
 
 ```{r}
 
-Distritos.GAM.sf<-sf::st_as_sf(Distritos.GAM)
-
-Distritos.GAM.sf<-Distritos.GAM.sf %>% sf::st_transform(crs = sf::st_crs(4326))
-
-Distritos.GAM.sf$COD_PROV<-as.integer(Distritos.GAM.sf$COD_PROV)
-Distritos.GAM.sf$COD_CANT<-as.integer(Distritos.GAM.sf$COD_CANT)
-Distritos.GAM.sf$COD_DIST<-as.integer(Distritos.GAM.sf$COD_DIST)
-clinicas$COD_PROV<-as.integer(clinicas$COD_PROV)
-clinicas$COD_CANT<-as.integer(clinicas$COD_CANT)
-clinicas$COD_DIST<-as.integer(clinicas$COD_DIST)
-
-ggplot(Distritos.GAM.sf)+
-  geom_sf(aes(geometry=geometry,
-          fill=NOM_PROV))+
-  theme_bw()+
-  scale_fill_viridis_d(guide_legend(title="Provincias"))+
-  ggtitle("Costa Rica. Distritos por provincia")
+par(mfrow=c(2,2))
+plot(density(xy.ppp), main="Gaussian")
+plot(density(xy.ppp, kernel="quartic"), main="quartic")
+plot(density(xy.ppp, kernel="epanechnikov"),main="epanechnikov")
+plot(density(xy.ppp, kernel="disc"),main="disc")
 
 
-coordenadas <- Distritos.GAM.sf %>%
-  sf::st_centroid() %>%
-  sf::st_coordinates()
-# insert centroid long and lat fields as attributes of polygons
+par(mfrow=c(2,2))
+plot(density(xy.ppp, adjust=0.35), main="0.35*bw")
+plot(density(xy.ppp, adjust=0.65), main="0.65*bw")
+plot(density(xy.ppp, adjust=0.90), main="0.90*bw")
+plot(density(xy.ppp, adjust=1.2), main="1.2*bw")
 
-Distritos.GAM.sf$long <- coordenadas[,1]
-Distritos.GAM.sf$lat <- coordenadas[,2]
-
-
-fronteras<-ggplot() +
-    geom_sf(data = world %>% filter(name!="Costa Rica"),
-            colour="gray") 
-
-mapa0<-fronteras+
-  geom_sf(data=Distritos3.sf,aes(geometry=geometry, fill = MICRO+PEQUENA), alpha=0.55)+
-  theme_bw()+
-  scale_fill_viridis_c(guide_legend(title="Núm. MYPE \n empresas"))+
-  #scale_fill_distiller(palette = "PiYG")+
-  ggtitle("Figura 1. Distribución de micro y pequeñas empresas (MYPE) \n  según distritos, Costa Rica. ")+
-  xlab("Longitud") + ylab("Latitud")+
-  theme(legend.title = element_text(size=8),
-        legend.text = element_text(size=8),
-        plot.title = element_text(hjust = 0.5, size=10),
-        axis.title = element_text(size = 9),
-        axis.text =  element_text(size = 8),
-        panel.grid.major = element_line(color = gray(0.5), linetype = "dashed", 
-        size = 0.5), panel.background = element_rect(fill = "aliceblue"))+
-  annotation_north_arrow(location = "bl", which_north = "true", 
-        pad_x = unit(0.75, "in"), pad_y = unit(0.5, "in"),
-        style = north_arrow_fancy_orienteering) +
-  annotation_scale(location = "bl", width_hint = 0.4)+
-    coord_sf(xlim = c(-85.97907, -82.55232), ylim = c(8.039627, 11.21976), expand = FALSE)
-
-#ggplot(Distritos2.GAM.sf)+
- # geom_sf(aes(geometry=geometry, fill = NOM_PROV), alpha=0.4)+
-  #geom_point(aes(long, lat, size = MICRO, colour = MICRO)) +
-  #theme_bw()+
-  #scale_colour_distiller(palette = "PiYG")+
-  #scale_fill_brewer(palette = "Set3"
-  #                  , drop = FALSE)+
-  #ggtitle("Costa Rica. Distritos por provincia")+
-  #ggtitle("Figura 1. Distribución de pequeñas empresas \n  según distritos, Costa Rica. ")+
-  #theme(legend.title = element_text(size=8),
-  #      legend.text = element_text(size=8),
-   #     plot.title = element_text(hjust = 0.5, size=10))+
-  #annotation_north_arrow(location = "bl", which_north = "true", 
-   #     pad_x = unit(0.75, "in"), pad_y = unit(0.5, "in"),
-  #      style = north_arrow_fancy_orienteering) +
-  #annotation_scale(location = "bl", width_hint = 0.4)+
-  #xlab("Longitud") + ylab("Latitud")
-
-cantones_bordes<-ggplot() +
-    geom_sf(data = cantones,
-            colour="gray") 
-
-
-mapa1.micro<-cantones_bordes +
-  geom_sf(data=Distritos2.GAM.sf,aes(geometry=geometry, fill = MICRO), alpha=0.55)+
-  theme_bw()+
-  #scale_fill_distiller(palette = "PiYG")+
-  scale_fill_viridis_c(guide_legend(title="Núm. micro \n empresas"))+
-  ggtitle("Figura 2. Distribución de micro empresas según distritos,\n Gran Área Metropolitana, Costa Rica. ")+
-  theme(legend.title = element_text(size=8),
-        legend.text = element_text(size=8),
-        plot.title = element_text(hjust = 0.5, size=10),
-        axis.title = element_text(size = 9),
-        axis.text =  element_text(size = 8))+
-  annotation_north_arrow(location = "bl", which_north = "true", 
-        pad_x = unit(0.5, "in"), pad_y = unit(0.3, "in"),
-        style = north_arrow_fancy_orienteering) +
-  annotation_scale(location = "bl", width_hint = 0.4)+
-  xlab("Longitud") + ylab("Latitud")+
-    coord_sf(xlim = c(-84.49, -83.74), ylim = c(9.73, 10.17), expand = FALSE)
-
-mapa1.peq<-cantones_bordes +
-  geom_sf(data=Distritos2.GAM.sf,aes(geometry=geometry, fill = PEQUENA), alpha=0.55)+
-  theme_bw()+
-  #scale_fill_distiller(palette = "PiYG")+
-  scale_fill_viridis_c(guide_legend(title="Núm. pequeñas \n empresas"))+
-  ggtitle("Figura 3. Distribución de pequeñas empresas según distritos,\n Gran Área Metropolitana, Costa Rica. ")+
-  theme(legend.title = element_text(size=8),
-        legend.text = element_text(size=8),
-        plot.title = element_text(hjust = 0.5, size=10),
-        axis.title = element_text(size = 9),
-        axis.text =  element_text(size = 8))+
-  annotation_north_arrow(location = "bl", which_north = "true", 
-        pad_x = unit(0.5, "in"), pad_y = unit(0.3, "in"),
-        style = north_arrow_fancy_orienteering) +
-  annotation_scale(location = "bl", width_hint = 0.4)+
-  xlab("Longitud") + ylab("Latitud")+
-    coord_sf(xlim = c(-84.49, -83.74), ylim = c(9.73, 10.17), expand = FALSE)
-  
-
-top5.mic<-head(Distritos2.GAM.sf %>% arrange(desc(MICRO)),5)
-top5.peq<-head(Distritos2.GAM.sf %>% arrange(desc(PEQUENA)),5)
-
-mapa2.micro<-cantones_bordes +
-geom_sf(data=Distritos2.GAM.sf,aes(geometry=geometry, fill = NOM_PROV), alpha=0.4)+
-  geom_point(data=top5.mic,aes(long, lat, size = MICRO, colour = MICRO)) +
-  theme_bw()+
-  scale_colour_viridis_c(guide_legend(title="Núm. micro \n empresas"))+
-  scale_fill_brewer(palette = "Paired"
-                    , drop = FALSE,
-                    guide_legend(title="Provincia"))+
-  ggtitle("Figura 4. Los cinco distrios con mayor cantidad de micro empresas, \n Gran Área Metropolitana, Costa Rica. ")+
-  geom_sf_label(data=top5.mic,aes(label = NOM_DIST), size=2, nudge_y = 0.01, alpha = 0.5)+
-  theme(legend.title = element_text(size=8),
-        legend.text = element_text(size=8),
-        plot.title = element_text(hjust = 0.5, size=10),
-        axis.title = element_text(size = 9),
-        axis.text =  element_text(size = 8))+
-  annotation_north_arrow(location = "bl", which_north = "true", 
-        pad_x = unit(0.75, "in"), pad_y = unit(0.5, "in"),
-        style = north_arrow_fancy_orienteering) +
-  annotation_scale(location = "bl", width_hint = 0.4)+
-  xlab("Longitud") + ylab("Latitud")+
-  guides(size = FALSE)+
-  coord_sf(xlim = c(-84.49, -83.74), ylim = c(9.73, 10.17), expand = FALSE)
-
-
-mapa2.peq<-cantones_bordes +
-geom_sf(data=Distritos2.GAM.sf,aes(geometry=geometry, fill = NOM_PROV), alpha=0.4)+
-  geom_point(data=top5.peq,aes(long, lat, size = PEQUENA, colour = PEQUENA)) +
-  theme_bw()+
-  scale_colour_viridis_c(guide_legend(title="Núm. pequeñas \n empresas"))+
-  scale_fill_brewer(palette = "Paired"
-                    , drop = FALSE,
-                    guide_legend(title="Provincia"))+
-  ggtitle("Figura 5. Los cinco distrios con mayor cantidad de pequeñas empresas, \n Gran Área Metropolitana, Costa Rica. ")+
-  geom_sf_label(data=top5.peq,aes(label = NOM_DIST), size=2, nudge_y = 0.01, alpha = 0.5)+
-  theme(legend.title = element_text(size=8),
-        legend.text = element_text(size=8),
-        plot.title = element_text(hjust = 0.5, size=10),
-        axis.title = element_text(size = 9),
-        axis.text =  element_text(size = 8))+
-  annotation_north_arrow(location = "bl", which_north = "true", 
-        pad_x = unit(0.75, "in"), pad_y = unit(0.5, "in"),
-        style = north_arrow_fancy_orienteering) +
-  annotation_scale(location = "bl", width_hint = 0.4)+
-  xlab("Longitud") + ylab("Latitud")+
-  guides(size = FALSE)+
-  coord_sf(xlim = c(-84.49, -83.74), ylim = c(9.73, 10.17), expand = FALSE)
-
-
-#plotly::ggplotly(ggplot(Distritos2.GAM.sf)+
- # geom_sf(aes(geometry=geometry, fill = NOM_PROV))+
-  #geom_point(aes(long, lat, text = NOM_DIST, size = EMPRESAS, colour = EMPRESAS)) +
-  #theme_bw()+
-  #scale_fill_viridis_d(guide_legend(title="Provincias"))+
-  #ggtitle("Costa Rica. Distritos por provincia")
-#,tootip=c("size","text"))
-
-
-mapa0
-mapa1.micro
-mapa1.peq
-mapa2.micro
-mapa2.peq
+par(mfrow=c(1,1))
+K1 <- density(xy.ppp, adjust=0.65) # Using the default bandwidth
+plot(K1, main="Mapa de la Intensidad de centros médicos \n (puntos/unidad de área) para para h=0.65 m")
+contour(K1, add=TRUE)
 
 
 ```
 
 
+### Estadísticas de resumen de segundo orden 
 
+```{r}
+plot(Gest(xy.ppp),main="Función G")
+```
 
+La línea calculada a partir de los datos está por encima de la línea azul, esto indica una distribución agrupada.
 
+### Funcionss K y F 
 
+```{r}
+K <- Kest(xy.ppp)
+K
 
+plot(K)
+```
 
+El gráfico muestra que en todas las distancias probadas el valor real observado de K es mayor que el valor esperado, indicando el agrupamiento.
 
+```{r}
+F.prueba <- Fest(xy.ppp)
+F.prueba
+
+plot(F.prueba)
+```
+
+En el caso de la función F, su interpretación es inversa, por lo cual se vuelve a confirmar que las clínicas tienden presentar agrupaciones.
+
+### Estimación de los modelos
+
+#### Modelo Poisson no homogéneo sin  la covariable
+
+```{r}
+fit<-ppm(xy.ppp ~ x + y)
+fit
+plot(fit, how = "image", se = FALSE, pause = FALSE)
+
+```
+
+#### Modelo Poisson no homogéneo con  la covariable
+
+```{r,warning=FALSE}
+Q <- quadscheme(data=xy.ppp, dummy=list(x=ventana$x, y=ventana$y))
+df <- data.frame(distancia=data.clinicas.distancia$distancia)
+
+fit2<-ppm(Q, ~ x + y  + distancia,  covariates=df)
+fit2
+```
+
+#### Modelo Poisson únicamente con la covariable
+
+```{r}
+fit3<-ppm(Q, ~ distancia,  covariates=df)
+fit3
+plot(effectfun(fit3, "distancia"), main = "")
+```
+
+#### Modelo Poisson homogéneo
+
+Modelo nulo
+
+```{r}
+fitnull <- update(fit, ~1)
+fitnull
+```
+
+#### Pruebas de Razón de Verosimilitud
+
+```{r}
+anova(fitnull, fit, test = "Chi") # Mejor modelo con x y y
+anova(fit3, fit2, test = "Chi") # Mejor modelo con la covariable
+
+```
+
+### Modelo  seleccionado
+
+Modelo Poisson no homogéneo con  la covariable
+
+$\lambda(x;y)=e^{-380.24-5.66 x-8.58 y-0.000276 Z}$
+
+donde Z representa: la distancia (m) de cada centro médico al hospital público más cercano. 
+
+Por lo tanto, manteniendo las demás variables constantes, por cada aumento en una unidad de la distancia caminada al hospital más cercano, la densidad de clínicas o consultorios médicos disminuye en 0.9997 unidades.
+
+### Conclusiones
+
+* La mayoría de centros médicos están agrupados en la provincia de San José. 
+
+* En general, las ubicaciones donde se  encuentran  los  hospitales  públicos,  tienden  a  presentar centros  médicos  cercanos.
+
+* Las estadísticas de resumen de segundo orden (funcionse G, K y F), concuerda con que no existe  homogeneidad en la distribución espacial de las clínicas y consultorios médicos, es decir presentan agrupaciones.
+
+* La existencia de los centros médicos está relacionado con las coordenadas de latitud y longitud, es decir no son un evento homogéneo.
+
+* No se rechaza la hipótesis de investigación de que la existencia de clínicas y consultorios médicos está relacionada con la cercanía  de las mismas a hospitales públicos. 
 
